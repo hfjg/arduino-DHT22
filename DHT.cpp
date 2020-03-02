@@ -28,21 +28,10 @@
 
 #include "DHT.h"
 
-void DHT::setup(uint8_t pin, DHT_MODEL_t model)
+void DHT::setup(uint8_t pin)
 {
   DHT::pin = pin;
-  DHT::model = model;
   DHT::resetTimer(); // Make sure we do read the sensor in the next readSensor()
-
-  if ( model == AUTO_DETECT) {
-    DHT::model = DHT22;
-    readSensor();
-    if ( error == ERROR_TIMEOUT ) {
-      DHT::model = DHT11;
-      // Warning: in case we auto detect a DHT11, you should wait at least 1000 msec
-      // before your first read request. Otherwise you will get a time out error.
-    }
-  }
 }
 
 void DHT::resetTimer()
@@ -50,13 +39,13 @@ void DHT::resetTimer()
   DHT::lastReadTime = millis() - 3000;
 }
 
-float DHT::getHumidity()
+int DHT::getHumidity()
 {
   readSensor();
   return humidity;
 }
 
-float DHT::getTemperature()
+int DHT::getTemperature()
 {
   readSensor();
   return temperature;
@@ -114,7 +103,7 @@ void DHT::readSensor()
   // - Max sample rate DHT11 is 1 Hz   (duty cicle 1000 ms)
   // - Max sample rate DHT22 is 0.5 Hz (duty cicle 2000 ms)
   unsigned long startTime = millis();
-  if ( (unsigned long)(startTime - lastReadTime) < (model == DHT11 ? 999L : 1999L) ) {
+  if ( (unsigned long)(startTime - lastReadTime) < 1999L) {
     return;
   }
   lastReadTime = startTime;
@@ -126,14 +115,8 @@ void DHT::readSensor()
 
   digitalWrite(pin, LOW); // Send start signal
   pinMode(pin, OUTPUT);
-  if ( model == DHT11 ) {
-    delay(18);
-  }
-  else {
-    // This will fail for a DHT11 - that's how we can detect such a device
-    delayMicroseconds(800);
-  }
-
+  delayMicroseconds(800);
+  
   pinMode(pin, INPUT);
   digitalWrite(pin, HIGH); // Switch bus to receive data
 
@@ -189,18 +172,12 @@ void DHT::readSensor()
 
   // Store readings
 
-  if ( model == DHT11 ) {
-    humidity = rawHumidity >> 8;
-    temperature = rawTemperature >> 8;
-  }
-  else {
-    humidity = rawHumidity * 0.1;
+  humidity = rawHumidity * 0.1;
 
-    if ( rawTemperature & 0x8000 ) {
-      rawTemperature = -(int16_t)(rawTemperature & 0x7FFF);
-    }
-    temperature = ((int16_t)rawTemperature) * 0.1;
+  if ( rawTemperature & 0x8000 ) {
+    rawTemperature = -(int16_t)(rawTemperature & 0x7FFF);
   }
+  temperature = ((int16_t)rawTemperature) * 0.1;
 
   error = ERROR_NONE;
 }
