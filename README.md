@@ -1,15 +1,15 @@
-DHT
-===
+DHT22
+=====
 
-An Arduino library for reading the DHT family of temperature and humidity sensors.
+An Arduino library for reading the DHT22 temperature and humidity sensor.
 
-Written by Mark Ruys, <mark@paracas.nl>.
+Originally written by Mark Ruys, <mark@paracas.nl>.
+
+Reduced to DHT22/AM2302 and inter variabkes to further reduce memory usage,
 
 Features
 --------
-  - Support for DHT11 and DHT22, AM2302, RHT03
-  - Auto detect sensor model
-  - Low memory footprint
+  - Very low memory footprint
   - Very small code
 
 Usage
