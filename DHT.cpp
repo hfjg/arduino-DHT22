@@ -1,29 +1,29 @@
 /******************************************************************
-  DHT Temperature & Humidity Sensor library for Arduino.
+  Minimal integer based DHT Temperature & Humidity Sensor library for Arduino.
 
   Features:
-  - Support for DHT11 and DHT22/AM2302/RHT03
-  - Auto detect sensor model
   - Very low memory footprint
   - Very small code
 
-  http://www.github.com/markruys/arduino-DHT
+  https://github.com/hfjg/arduino-DHT22
+  Written by Hermann Gebhard, h-gebhard@web.de
 
-  Written by Mark Ruys, mark@paracas.nl.
+  forked from 
+  https://github.com/markruys/arduino-DHT
+  by Mark Ruys, mark@paracas.nl.
 
   BSD license, check license.txt for more information.
   All text above must be included in any redistribution.
 
   Datasheets:
-  - http://www.micro4you.com/files/sensor/DHT11.pdf
   - http://www.adafruit.com/datasheets/DHT22.pdf
-  - http://dlnmh9ip6v2uc.cloudfront.net/datasheets/Sensors/Weather/RHT03.pdf
   - http://meteobox.tk/files/AM2302.pdf
 
   Changelog:
-   2013-06-10: Initial version
-   2013-06-12: Refactored code
+   2020-03-02: Reduced lib to minimum, changed to integer arithmetics
    2013-07-01: Add a resetTimer method
+   2013-06-12: Refactored code
+   2013-06-10: Initial version
  ******************************************************************/
 
 #include "DHT.h"
@@ -31,87 +31,32 @@
 void DHT::setup(uint8_t pin)
 {
   DHT::pin = pin;
-  DHT::resetTimer(); // Make sure we do read the sensor in the next readSensor()
-}
-
-void DHT::resetTimer()
-{
   DHT::lastReadTime = millis() - 3000;
 }
 
-int DHT::getHumidity()
+uint8_t DHT::readSensor(uint32_t *result)
 {
-  readSensor();
-  return humidity;
-}
-
-int DHT::getTemperature()
-{
-  readSensor();
-  return temperature;
-}
-
-#ifndef OPTIMIZE_SRAM_SIZE
-
-const char* DHT::getStatusString()
-{
-  switch ( error ) {
-    case DHT::ERROR_TIMEOUT:
-      return "TIMEOUT";
-
-    case DHT::ERROR_CHECKSUM:
-      return "CHECKSUM";
-
-    default:
-      return "OK";
-  }
-}
-
-#else
-
-// At the expense of 26 bytes of extra PROGMEM, we save 11 bytes of
-// SRAM by using the following method:
-
-prog_char P_OK[]       PROGMEM = "OK";
-prog_char P_TIMEOUT[]  PROGMEM = "TIMEOUT";
-prog_char P_CHECKSUM[] PROGMEM = "CHECKSUM";
-
-const char *DHT::getStatusString() {
-  prog_char *c;
-  switch ( error ) {
-    case DHT::ERROR_CHECKSUM:
-      c = P_CHECKSUM; break;
-
-    case DHT::ERROR_TIMEOUT:
-      c = P_TIMEOUT; break;
-
-    default:
-      c = P_OK; break;
-  }
-
-  static char buffer[9];
-  strcpy_P(buffer, c);
-
-  return buffer;
-}
-
-#endif
-
-void DHT::readSensor()
-{
-  // Make sure we don't poll the sensor too often
-  // - Max sample rate DHT11 is 1 Hz   (duty cicle 1000 ms)
-  // - Max sample rate DHT22 is 0.5 Hz (duty cicle 2000 ms)
+  static union{
+    uint32_t r32;
+    struct {
+      int16_t temp, humi;
+    }ht;
+  }conversionResult;
+  
+  uint16_t rawTemperature, rawHumidity;
+  uint16_t data = 0;
   unsigned long startTime = millis();
-  if ( (unsigned long)(startTime - lastReadTime) < 1999L) {
-    return;
-  }
-  lastReadTime = startTime;
 
-  temperature = NAN;
-  humidity = NAN;
+  // Make sure we don't poll the sensor too often
+  // - Max sample rate DHT22 is 0.5 Hz (duty cicle 2000 ms)
+
+  if ( (unsigned long)(startTime - lastReadTime) < 1999L) {
+    *result = conversionResult.r32;
+    return ERROR_NO_NEW_SAMPLE;
+  }
 
   // Request sample
+  lastReadTime = startTime;
 
   digitalWrite(pin, LOW); // Send start signal
   pinMode(pin, OUTPUT);
@@ -125,10 +70,6 @@ void DHT::readSensor()
   // - Then 40 bits: RISING and then a FALLING edge per bit
   // To keep our code simple, we accept any HIGH or LOW reading if it's max 85 usecs long
 
-  uint16_t rawHumidity = 0;
-  uint16_t rawTemperature = 0;
-  uint16_t data = 0;
-
   for ( int8_t i = -3 ; i < 2 * 40; i++ ) {
     byte age;
     startTime = micros();
@@ -136,8 +77,7 @@ void DHT::readSensor()
     do {
       age = (unsigned long)(micros() - startTime);
       if ( age > 90 ) {
-        error = ERROR_TIMEOUT;
-        return;
+        return ERROR_TIMEOUT;;
       }
     }
     while ( digitalRead(pin) == (i & 1) ? HIGH : LOW );
@@ -152,32 +92,28 @@ void DHT::readSensor()
       }
     }
 
-    switch ( i ) {
-      case 31:
+    if (i==31){
         rawHumidity = data;
-        break;
-      case 63:
+    }
+    else if (i==63){
         rawTemperature = data;
         data = 0;
-        break;
     }
   }
 
   // Verify checksum
 
   if ( (byte)(((byte)rawHumidity) + (rawHumidity >> 8) + ((byte)rawTemperature) + (rawTemperature >> 8)) != data ) {
-    error = ERROR_CHECKSUM;
-    return;
+    return ERROR_CHECKSUM;;
   }
 
-  // Store readings
-
-  humidity = rawHumidity * 0.1;
-
+  // Pack readings into conversionResult
   if ( rawTemperature & 0x8000 ) {
     rawTemperature = -(int16_t)(rawTemperature & 0x7FFF);
   }
-  temperature = ((int16_t)rawTemperature) * 0.1;
+  conversionResult.ht.humi = rawHumidity;
+  conversionResult.ht.temp = rawTemperature;
+  *result = conversionResult.r32;
 
-  error = ERROR_NONE;
+  return ERROR_NONE;
 }
